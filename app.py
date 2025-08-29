@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import mysql.connector
+from urllib.parse import urlparse
 from flask import Flask, render_template_string, request, redirect, url_for
 from datetime import datetime
 
@@ -12,12 +13,14 @@ budget = 0
 USE_MYSQL = os.environ.get('USE_MYSQL', '0') == '1'
 
 if USE_MYSQL:
+    db_url = os.environ.get('DATABASE_URL')
+    url = urlparse(db_url)
     db_config = {
-        'host': os.environ.get('MYSQL_HOST'),
-        'user': os.environ.get('MYSQL_USER'),
-        'password': os.environ.get('MYSQL_PASSWORD'),
-        'database': os.environ.get('MYSQL_DATABASE'),
-        'port': int(os.environ.get('MYSQL_PORT', 3306))
+        'host': url.hostname,
+        'user': url.username,
+        'password': url.password,
+        'database': url.path.lstrip('/'),
+        'port': url.port or 3306
     }
 
     def get_db_connection():
