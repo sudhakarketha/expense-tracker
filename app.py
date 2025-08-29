@@ -7,7 +7,7 @@ from datetime import datetime
 app = Flask(__name__)
 
 CATEGORIES = ["Food", "Transport", "Shopping", "Bills", "Other"]
-budget = 2500
+budget = 0
 
 USE_MYSQL = os.environ.get('USE_MYSQL', '0') == '1'
 
@@ -41,6 +41,9 @@ if USE_MYSQL:
         expenses = cursor.fetchall()
         cursor.close()
         conn.close()
+        for e in expenses:
+            if isinstance(e['date'], str):
+                e['date'] = datetime.strptime(e['date'], "%Y-%m-%d")
         return expenses
 
 else:
@@ -55,9 +58,6 @@ else:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, amount REAL, description TEXT, category TEXT)"
-        )
-        cursor.execute(
             "INSERT INTO expenses (date, amount, description, category) VALUES (?, ?, ?, ?)",
             (date, amount, description, category)
         )
@@ -68,9 +68,6 @@ else:
     def fetch_expenses_from_db():
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            "CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, amount REAL, description TEXT, category TEXT)"
-        )
         cursor.execute("SELECT * FROM expenses")
         rows = cursor.fetchall()
         expenses = []
@@ -86,10 +83,40 @@ else:
         conn.close()
         return expenses
 
-expenses = []
-budget = 0  # Default budget
+def create_expenses_table():
+    if USE_MYSQL:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS expenses (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                date DATE NOT NULL,
+                amount DECIMAL(10,2) NOT NULL,
+                description VARCHAR(255) NOT NULL,
+                category VARCHAR(50) NOT NULL
+            )
+        """)
+        conn.commit()
+        cursor.close()
+        conn.close()
+    else:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                amount REAL NOT NULL,
+                description TEXT NOT NULL,
+                category TEXT NOT NULL
+            )
+        """)
+        conn.commit()
+        cursor.close()
+        conn.close()
 
-CATEGORIES = ["Food", "Transport", "Shopping", "Bills", "Other"]
+# Ensure table exists at startup
+create_expenses_table()
 
 HTML = """
 <!doctype html>
@@ -348,15 +375,3 @@ def set_budget():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
-
-import mysql.connector
-
-conn = mysql.connector.connect(
-    host='your-db-name.mysql.clever-cloud.com',
-    user='your-username',
-    password='your-password',
-    database='your-database',
-    port=3306
-)
-print("Connected!")
-conn.close()
