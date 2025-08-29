@@ -1,7 +1,91 @@
+import os
+import sqlite3
+import mysql.connector
 from flask import Flask, render_template_string, request, redirect, url_for
 from datetime import datetime
 
 app = Flask(__name__)
+
+CATEGORIES = ["Food", "Transport", "Shopping", "Bills", "Other"]
+budget = 2500
+
+USE_MYSQL = os.environ.get('USE_MYSQL', '0') == '1'
+
+if USE_MYSQL:
+    db_config = {
+        'host': os.environ.get('MYSQL_HOST'),
+        'user': os.environ.get('MYSQL_USER'),
+        'password': os.environ.get('MYSQL_PASSWORD'),
+        'database': os.environ.get('MYSQL_DATABASE'),
+        'port': int(os.environ.get('MYSQL_PORT', 3306))
+    }
+
+    def get_db_connection():
+        return mysql.connector.connect(**db_config)
+
+    def add_expense_to_db(date, amount, description, category):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO expenses (date, amount, description, category) VALUES (%s, %s, %s, %s)",
+            (date, amount, description, category)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+    def fetch_expenses_from_db():
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM expenses")
+        expenses = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return expenses
+
+else:
+    DB_PATH = "expenses.db"
+
+    def get_db_connection():
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def add_expense_to_db(date, amount, description, category):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, amount REAL, description TEXT, category TEXT)"
+        )
+        cursor.execute(
+            "INSERT INTO expenses (date, amount, description, category) VALUES (?, ?, ?, ?)",
+            (date, amount, description, category)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+    def fetch_expenses_from_db():
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, amount REAL, description TEXT, category TEXT)"
+        )
+        cursor.execute("SELECT * FROM expenses")
+        rows = cursor.fetchall()
+        expenses = []
+        for row in rows:
+            expenses.append({
+                'id': row['id'],
+                'date': datetime.strptime(row['date'], "%Y-%m-%d"),
+                'amount': row['amount'],
+                'description': row['description'],
+                'category': row['category']
+            })
+        cursor.close()
+        conn.close()
+        return expenses
+
 expenses = []
 budget = 0  # Default budget
 
@@ -183,10 +267,12 @@ def index():
     expense_date = request.args.get('expense_date', today_str)
     month_filter = request.args.get('month_filter', today_month)
 
-    filtered_expenses = expenses
+    all_expenses = fetch_expenses_from_db()
+
+    filtered_expenses = all_expenses
     if search:
         filtered_expenses = [
-            e for e in expenses
+            e for e in all_expenses
             if search in e['description'].lower() or search in e['category'].lower()
         ]
 
@@ -196,7 +282,7 @@ def index():
     except Exception:
         filter_date = today
 
-    today_expenses = [e for e in filtered_expenses if e['date'].date() == filter_date.date()]
+    today_expenses = [e for e in filtered_expenses if e['date'].strftime("%Y-%m-%d") == filter_date.strftime("%Y-%m-%d")]
     today_total = sum(e['amount'] for e in today_expenses)
 
     # Monthly summary filtering
@@ -207,7 +293,7 @@ def index():
 
     month_expenses = [
         e for e in filtered_expenses
-        if e['date'].month == filter_month.month and e['date'].year == filter_month.year
+        if e['date'].strftime("%Y-%m") == filter_month.strftime("%Y-%m")
     ]
     month_str = filter_month.strftime("%B, %Y")
     month_total = sum(e['amount'] for e in month_expenses)
@@ -241,11 +327,11 @@ def index():
 @app.route('/add', methods=['POST'])
 def add_expense():
     try:
-        date = datetime.strptime(request.form['date'], "%Y-%m-%d")
+        date = request.form['date']
         amount = float(request.form['amount'])
         description = request.form['description']
         category = request.form['category']
-        expenses.append({'date': date, 'amount': amount, 'description': description, 'category': category})
+        add_expense_to_db(date, amount, description, category)
     except Exception:
         pass
     return redirect(url_for('index'))
@@ -261,3 +347,15 @@ def set_budget():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+import mysql.connector
+
+conn = mysql.connector.connect(
+    host='your-db-name.mysql.clever-cloud.com',
+    user='your-username',
+    password='your-password',
+    database='your-database',
+    port=3306
+)
+print("Connected!")
+conn.close()
