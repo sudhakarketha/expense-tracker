@@ -118,8 +118,26 @@ def create_expenses_table():
         cursor.close()
         conn.close()
 
+def create_tables():
+    conn = get_db_connection()  # Use your existing connection function
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS interest (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            principal REAL NOT NULL,
+            rate REAL NOT NULL,
+            time REAL NOT NULL,
+            interest REAL NOT NULL,
+            calculated_on TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    cursor.close()
+    conn.close()
+
 # Ensure table exists at startup
 create_expenses_table()
+create_tables()
 
 HTML = """
 <!doctype html>
