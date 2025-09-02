@@ -2,10 +2,15 @@ import os
 import sqlite3
 import mysql.connector
 from urllib.parse import urlparse
-from flask import Flask, render_template_string, request, redirect, url_for
+from flask import Flask, render_template_string, request, redirect, url_for, session, flash
 from datetime import datetime
+import hashlib
+import secrets
+from functools import wraps
 
 app = Flask(__name__)
+# Set a secret key for session management
+app.secret_key = secrets.token_hex(16)
 
 CATEGORIES = ["Food", "Transport", "Shopping", "Bills", "Other"]
 budget = 0
@@ -48,21 +53,25 @@ if USE_MYSQL:
                     raise
             raise
 
-    def add_expense_to_db(date, amount, description, category):
+    def add_expense_to_db(date, amount, description, category, user_id=None):
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO expenses (date, amount, description, category) VALUES (%s, %s, %s, %s)",
-            (date, amount, description, category)
+            "INSERT INTO expenses (date, amount, description, category, user_id) VALUES (%s, %s, %s, %s, %s)",
+            (date, amount, description, category, user_id)
         )
         conn.commit()
         cursor.close()
         conn.close()
+        return True
 
-    def fetch_expenses_from_db():
+    def fetch_expenses_from_db(user_id=None):
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM expenses ORDER BY date DESC")
+        if user_id:
+            cursor.execute("SELECT * FROM expenses WHERE user_id = %s ORDER BY date DESC", (user_id,))
+        else:
+            cursor.execute("SELECT * FROM expenses ORDER BY date DESC")
         expenses = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -71,10 +80,13 @@ if USE_MYSQL:
                 e['date'] = datetime.strptime(e['date'], "%Y-%m-%d")
         return expenses
         
-    def get_expense_by_id(expense_id):
+    def get_expense_by_id(expense_id, user_id=None):
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM expenses WHERE id = %s", (expense_id,))
+        if user_id:
+            cursor.execute("SELECT * FROM expenses WHERE id = %s AND user_id = %s", (expense_id, user_id))
+        else:
+            cursor.execute("SELECT * FROM expenses WHERE id = %s", (expense_id,))
         expense = cursor.fetchone()
         cursor.close()
         conn.close()
@@ -82,21 +94,30 @@ if USE_MYSQL:
             expense['date'] = datetime.strptime(expense['date'], "%Y-%m-%d")
         return expense
         
-    def update_expense_in_db(expense_id, date, amount, description, category):
+    def update_expense_in_db(expense_id, date, amount, description, category, user_id=None):
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE expenses SET date = %s, amount = %s, description = %s, category = %s WHERE id = %s",
-            (date, amount, description, category, expense_id)
-        )
+        if user_id:
+            cursor.execute(
+                "UPDATE expenses SET date = %s, amount = %s, description = %s, category = %s WHERE id = %s AND user_id = %s",
+                (date, amount, description, category, expense_id, user_id)
+            )
+        else:
+            cursor.execute(
+                "UPDATE expenses SET date = %s, amount = %s, description = %s, category = %s WHERE id = %s",
+                (date, amount, description, category, expense_id)
+            )
         conn.commit()
         cursor.close()
         conn.close()
         
-    def delete_expense_from_db(expense_id):
+    def delete_expense_from_db(expense_id, user_id=None):
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM expenses WHERE id = %s", (expense_id,))
+        if user_id:
+            cursor.execute("DELETE FROM expenses WHERE id = %s AND user_id = %s", (expense_id, user_id))
+        else:
+            cursor.execute("DELETE FROM expenses WHERE id = %s", (expense_id,))
         conn.commit()
         cursor.close()
         conn.close()
@@ -109,68 +130,89 @@ else:
         conn.row_factory = sqlite3.Row
         return conn
 
-    def add_expense_to_db(date, amount, description, category):
+    def add_expense_to_db(date, amount, description, category, user_id=None):
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO expenses (date, amount, description, category) VALUES (?, ?, ?, ?)",
-            (date, amount, description, category)
+            "INSERT INTO expenses (date, amount, description, category, user_id) VALUES (?, ?, ?, ?, ?)",
+            (date, amount, description, category, user_id)
         )
         conn.commit()
         cursor.close()
         conn.close()
 
-    def fetch_expenses_from_db():
+    def fetch_expenses_from_db(user_id=None):
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM expenses ORDER BY date DESC")
+        if user_id:
+            cursor.execute("SELECT * FROM expenses WHERE user_id = ? ORDER BY date DESC", (user_id,))
+        else:
+            cursor.execute("SELECT * FROM expenses ORDER BY date DESC")
         rows = cursor.fetchall()
         expenses = []
         for row in rows:
+            # Get column names from the cursor description
+            column_names = [column[0] for column in cursor.description]
             expenses.append({
                 'id': row['id'],
                 'date': datetime.strptime(row['date'], "%Y-%m-%d"),
                 'amount': row['amount'],
                 'description': row['description'],
-                'category': row['category']
+                'category': row['category'],
+                'user_id': row['user_id'] if 'user_id' in column_names else None
             })
         cursor.close()
         conn.close()
         return expenses
         
-    def get_expense_by_id(expense_id):
+    def get_expense_by_id(expense_id, user_id=None):
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM expenses WHERE id = ?", (expense_id,))
+        if user_id:
+            cursor.execute("SELECT * FROM expenses WHERE id = ? AND user_id = ?", (expense_id, user_id))
+        else:
+            cursor.execute("SELECT * FROM expenses WHERE id = ?", (expense_id,))
         row = cursor.fetchone()
         expense = None
         if row:
+            # Get column names from the cursor description
+            column_names = [column[0] for column in cursor.description]
             expense = {
                 'id': row['id'],
                 'date': datetime.strptime(row['date'], "%Y-%m-%d"),
                 'amount': row['amount'],
                 'description': row['description'],
-                'category': row['category']
+                'category': row['category'],
+                'user_id': row['user_id'] if 'user_id' in column_names else None
             }
         cursor.close()
         conn.close()
         return expense
         
-    def update_expense_in_db(expense_id, date, amount, description, category):
+    def update_expense_in_db(expense_id, date, amount, description, category, user_id=None):
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE expenses SET date = ?, amount = ?, description = ?, category = ? WHERE id = ?",
-            (date, amount, description, category, expense_id)
-        )
+        if user_id:
+            cursor.execute(
+                "UPDATE expenses SET date = ?, amount = ?, description = ?, category = ? WHERE id = ? AND user_id = ?",
+                (date, amount, description, category, expense_id, user_id)
+            )
+        else:
+            cursor.execute(
+                "UPDATE expenses SET date = ?, amount = ?, description = ?, category = ? WHERE id = ?",
+                (date, amount, description, category, expense_id)
+            )
         conn.commit()
         cursor.close()
         conn.close()
         
-    def delete_expense_from_db(expense_id):
+    def delete_expense_from_db(expense_id, user_id=None):
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
+        if user_id:
+            cursor.execute("DELETE FROM expenses WHERE id = ? AND user_id = ?", (expense_id, user_id))
+        else:
+            cursor.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
         conn.commit()
         cursor.close()
         conn.close()
@@ -186,7 +228,9 @@ def create_expenses_table():
                     date DATE NOT NULL,
                     amount DECIMAL(10,2) NOT NULL,
                     description VARCHAR(255) NOT NULL,
-                    category VARCHAR(50) NOT NULL
+                    category VARCHAR(50) NOT NULL,
+                    user_id INT,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
                 )
             """)
             conn.commit()
@@ -208,7 +252,9 @@ def create_expenses_table():
                     date TEXT NOT NULL,
                     amount REAL NOT NULL,
                     description TEXT NOT NULL,
-                    category TEXT NOT NULL
+                    category TEXT NOT NULL,
+                    user_id INTEGER,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
                 )
             """)
             conn.commit()
@@ -221,11 +267,203 @@ def create_expenses_table():
             cursor.close()
             conn.close()
 
+def create_users_table():
+    if USE_MYSQL:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    username VARCHAR(50) UNIQUE NOT NULL,
+                    password VARCHAR(255) NOT NULL,
+                    email VARCHAR(100) UNIQUE NOT NULL,
+                    budget DECIMAL(10,2) DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.commit()
+            print("MySQL users table created or already exists")
+        except mysql.connector.Error as err:
+            print(f"Error creating users table: {err}")
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
+            conn.close()
+    else:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password TEXT NOT NULL,
+                    email TEXT UNIQUE NOT NULL,
+                    budget REAL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.commit()
+            print("SQLite users table created or already exists")
+        except sqlite3.Error as e:
+            print(f"Error creating SQLite users table: {e}")
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
+            conn.close()
+
 # Interest table functionality has been removed
+
+# User management functions
+def register_user(username, password, email):
+    """Register a new user with hashed password"""
+    # Hash the password with salt
+    password_hash = hashlib.sha256(password.encode()).hexdigest()
+    
+    if USE_MYSQL:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO users (username, password, email) VALUES (%s, %s, %s)",
+                (username, password_hash, email)
+            )
+            conn.commit()
+            user_id = cursor.lastrowid
+            cursor.close()
+            conn.close()
+            return user_id
+        except Exception as e:
+            print(f"Error registering user: {e}")
+            return None
+    else:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO users (username, password, email) VALUES (?, ?, ?)",
+                (username, password_hash, email)
+            )
+            conn.commit()
+            user_id = cursor.lastrowid
+            cursor.close()
+            conn.close()
+            return user_id
+        except Exception as e:
+            print(f"Error registering user: {e}")
+            return None
+
+def authenticate_user(username, password):
+    """Authenticate a user by username and password"""
+    # Hash the password for comparison
+    password_hash = hashlib.sha256(password.encode()).hexdigest()
+    
+    if USE_MYSQL:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(
+                "SELECT * FROM users WHERE username = %s AND password = %s",
+                (username, password_hash)
+            )
+            user = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            return user
+        except Exception as e:
+            print(f"Error authenticating user: {e}")
+            return None
+    else:
+        try:
+            conn = get_db_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM users WHERE username = ? AND password = ?",
+                (username, password_hash)
+            )
+            user = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            return user
+        except Exception as e:
+            print(f"Error authenticating user: {e}")
+            return None
+
+def get_user_by_username(username):
+    """Get user by username"""
+    if USE_MYSQL:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+            user = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            return user
+        except Exception as e:
+            print(f"Error getting user: {e}")
+            return None
+    else:
+        try:
+            conn = get_db_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+            user = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            return user
+        except Exception as e:
+            print(f"Error getting user: {e}")
+            return None
+
+def get_user_by_email(email):
+    """Get user by email"""
+    if USE_MYSQL:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+            user = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            return user
+        except Exception as e:
+            print(f"Error getting user by email: {e}")
+            return None
+    else:
+        try:
+            conn = get_db_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+            user = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            return user
+        except Exception as e:
+            print(f"Error getting user by email: {e}")
+            return None
+
+# Authentication decorator
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            flash('Please log in to access this page', 'error')
+            return redirect(url_for('login', next=request.url))
+        return f(*args, **kwargs)
+    return decorated_function
 
 # Function to initialize the database and create all required tables
 def initialize_database():
     try:
+        # Ensure users table exists before expenses table (due to foreign key)
+        create_users_table()
         # Ensure expenses table exists at startup
         create_expenses_table()
         print("Database tables created successfully")
@@ -253,9 +491,21 @@ HTML = """
 </head>
 <body>
 <div class="container py-4">
-    <div class="dashboard-header p-4 mb-4">
-        <h2><span>💰</span> Expense Tracker</h2>
-        <p>Track your daily expenses and manage your budget effectively</p>
+    <div class="dashboard-header p-4 mb-4 d-flex justify-content-between">
+        <div>
+            <h2><span>💰</span> Expense Tracker</h2>
+            <p>Track your daily expenses and manage your budget effectively</p>
+        </div>
+        <div class="user-menu">
+            <div class="dropdown">
+                <button class="btn btn-light dropdown-toggle" type="button" id="userMenu" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-person-circle me-1"></i> {{ username }}
+                </button>
+                <ul class="dropdown-menu" aria-labelledby="userMenu">
+                    <li><a class="dropdown-item" href="/logout">Logout</a></li>
+                </ul>
+            </div>
+        </div>
     </div>
     <div class="row mb-4">
         <div class="col-md-3">
@@ -445,11 +695,207 @@ HTML = """
         </div>
     </div>
 </div>
+
+<!-- Bootstrap JS Bundle -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
 """
 
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        confirm_password = request.form.get('confirm_password')
+        email = request.form.get('email')
+        
+        # Validate input
+        if not username or not password or not email or not confirm_password:
+            flash('All fields are required', 'error')
+            return redirect(url_for('register'))
+            
+        if password != confirm_password:
+            flash('Passwords do not match', 'error')
+            return redirect(url_for('register'))
+            
+        # Check if username already exists
+        if get_user_by_username(username):
+            flash('Username already exists', 'error')
+            return redirect(url_for('register'))
+            
+        # Check if email already exists
+        if get_user_by_email(email):
+            flash('Email already exists', 'error')
+            return redirect(url_for('register'))
+            
+        # Register user
+        user_id = register_user(username, password, email)
+        if user_id:
+            flash('Registration successful! Please log in.', 'success')
+            return redirect(url_for('login'))
+        else:
+            flash('Registration failed', 'error')
+            return redirect(url_for('register'))
+    
+    return render_template_string('''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Register - Expense Tracker</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+        <style>
+            .auth-container {
+                max-width: 500px;
+                margin: 50px auto;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container auth-container">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="text-center">Register</h3>
+                </div>
+                <div class="card-body">
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            {% for category, message in messages %}
+                                <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }}">
+                                    {{ message }}
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+                    {% endwith %}
+                    
+                    <form action="/register" method="post">
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Username</label>
+                            <input type="text" class="form-control" id="username" name="username" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="email" name="email" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="password" name="password" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="confirm_password" class="form-label">Confirm Password</label>
+                            <input type="password" class="form-control" id="confirm_password" name="confirm_password" required>
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">Register</button>
+                        </div>
+                    </form>
+                    <div class="mt-3 text-center">
+                        <p>Already have an account? <a href="/login">Login</a></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    </body>
+    </html>
+    ''')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        # Validate input
+        if not username or not password:
+            flash('Username and password are required', 'error')
+            return redirect(url_for('login'))
+            
+        # Authenticate user
+        user = authenticate_user(username, password)
+        if user:
+            # Set session variables
+            session['user_id'] = user['id'] if USE_MYSQL else user['id']
+            session['username'] = username
+            flash(f'Welcome back, {username}!', 'success')
+            
+            # Redirect to next page or index
+            next_page = request.args.get('next')
+            return redirect(next_page or url_for('index'))
+        else:
+            flash('Invalid username or password', 'error')
+            return redirect(url_for('login'))
+    
+    return render_template_string('''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Login - Expense Tracker</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+        <style>
+            .auth-container {
+                max-width: 500px;
+                margin: 50px auto;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container auth-container">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="text-center">Login</h3>
+                </div>
+                <div class="card-body">
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            {% for category, message in messages %}
+                                <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }}">
+                                    {{ message }}
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+                    {% endwith %}
+                    
+                    <form action="/login" method="post">
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Username</label>
+                            <input type="text" class="form-control" id="username" name="username" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="password" name="password" required>
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">Login</button>
+                        </div>
+                    </form>
+                    <div class="mt-3 text-center">
+                        <p>Don't have an account? <a href="/register">Register</a></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    </body>
+    </html>
+    ''')
+
+@app.route('/logout')
+def logout():
+    # Clear session
+    session.pop('user_id', None)
+    session.pop('username', None)
+    flash('You have been logged out', 'success')
+    return redirect(url_for('login'))
+
 @app.route('/', methods=['GET'])
+@login_required
 def index():
     today = datetime.now()
     today_str = today.strftime("%Y-%m-%d")
@@ -458,8 +904,9 @@ def index():
     search = request.args.get('search', '').lower()
     expense_date = request.args.get('expense_date', today_str)
     month_filter = request.args.get('month_filter', today_month)
+    user_id = session.get('user_id')
 
-    all_expenses = fetch_expenses_from_db()
+    all_expenses = fetch_expenses_from_db(user_id)
 
     filtered_expenses = all_expenses
     if search:
@@ -489,8 +936,11 @@ def index():
     ]
     month_str = filter_month.strftime("%B, %Y")
     month_total = sum(e['amount'] for e in month_expenses)
-    remaining = budget - month_total
-    budget_usage = round((month_total / budget) * 100, 2) if budget else 0
+    
+    # Get user's budget from database
+    user_budget = get_budget_from_db(user_id)
+    remaining = user_budget - month_total
+    budget_usage = round((month_total / user_budget) * 100, 2) if user_budget else 0
     month_count = len(month_expenses)
     month_avg = round(month_total / month_count, 2) if month_count else 0
     month_usage = budget_usage
@@ -499,7 +949,7 @@ def index():
         HTML,
         today_total=f"{today_total:.2f}",
         month_total=f"{month_total:.2f}",
-        budget=f"{budget:.2f}",
+        budget=f"{user_budget:.2f}",
         remaining=f"{remaining:.2f}",
         budget_usage=budget_usage,
         today_str=today_str,
@@ -513,24 +963,29 @@ def index():
         month_usage=month_usage,
         search=search,
         month_filter=month_filter,
-        today_month=today_month
+        today_month=today_month,
+        username=session.get('username')
     )
 
 @app.route('/add', methods=['POST'])
+@login_required
 def add_expense():
     try:
         date = request.form['date']
         amount = float(request.form['amount'])
         description = request.form['description']
         category = request.form['category']
-        add_expense_to_db(date, amount, description, category)
+        user_id = session.get('user_id')
+        add_expense_to_db(date, amount, description, category, user_id)
     except Exception as e:
         print(f"Error adding expense: {e}")
     return redirect(url_for('index'))
 
 @app.route('/edit/<int:expense_id>', methods=['GET', 'POST'])
+@login_required
 def edit_expense(expense_id):
-    expense = get_expense_by_id(expense_id)
+    user_id = session.get('user_id')
+    expense = get_expense_by_id(expense_id, user_id)
     if not expense:
         return redirect(url_for('index'))
     
@@ -540,7 +995,7 @@ def edit_expense(expense_id):
             amount = float(request.form['amount'])
             description = request.form['description']
             category = request.form['category']
-            update_expense_in_db(expense_id, date, amount, description, category)
+            update_expense_in_db(expense_id, date, amount, description, category, user_id)
             return redirect(url_for('index'))
         except Exception as e:
             print(f"Error updating expense: {e}")
@@ -612,20 +1067,85 @@ def edit_expense(expense_id):
     )
 
 @app.route('/delete/<int:expense_id>', methods=['POST'])
+@login_required
 def delete_expense(expense_id):
     try:
-        delete_expense_from_db(expense_id)
+        user_id = session.get('user_id')
+        delete_expense_from_db(expense_id, user_id)
     except Exception as e:
         print(f"Error deleting expense: {e}")
     return redirect(url_for('index'))
 
+def get_budget_from_db(user_id=None):
+    if USE_MYSQL:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            if user_id:
+                cursor.execute("SELECT budget FROM users WHERE id = %s", (user_id,))
+            else:
+                return 0
+            result = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            return result['budget'] if result and result['budget'] else 0
+        except Exception as e:
+            print(f"Error getting budget: {e}")
+            return 0
+    else:
+        try:
+            conn = get_db_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            if user_id:
+                cursor.execute("SELECT budget FROM users WHERE id = ?", (user_id,))
+            else:
+                return 0
+            result = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            return result['budget'] if result else 0
+        except Exception as e:
+            print(f"Error getting budget: {e}")
+            return 0
+
+def update_budget_in_db(budget, user_id):
+    if USE_MYSQL:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("UPDATE users SET budget = %s WHERE id = %s", (budget, user_id))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"Error updating budget: {e}")
+            return False
+    else:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("UPDATE users SET budget = ? WHERE id = ?", (budget, user_id))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"Error updating budget: {e}")
+            return False
+
 @app.route('/set_budget', methods=['POST'])
+@login_required
 def set_budget():
-    global budget
     try:
+        user_id = session.get('user_id')
         budget = float(request.form['budget'])
-    except Exception:
-        pass
+        update_budget_in_db(budget, user_id)
+        flash('Budget updated successfully!', 'success')
+    except Exception as e:
+        print(f"Error setting budget: {e}")
+        flash('Error updating budget', 'error')
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
