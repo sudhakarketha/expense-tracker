@@ -234,9 +234,9 @@ def create_expenses_table():
                 )
             """)
             conn.commit()
-            print("Expenses table created or already exists")
+            print("MySQL expenses table created or already exists")
         except mysql.connector.Error as err:
-            print(f"Error creating expenses table: {err}")
+            print(f"Error creating MySQL expenses table: {err}")
             conn.rollback()
             raise
         finally:
