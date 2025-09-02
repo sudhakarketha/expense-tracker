@@ -62,7 +62,7 @@ if USE_MYSQL:
     def fetch_expenses_from_db():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM expenses")
+        cursor.execute("SELECT * FROM expenses ORDER BY date DESC")
         expenses = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -70,6 +70,36 @@ if USE_MYSQL:
             if isinstance(e['date'], str):
                 e['date'] = datetime.strptime(e['date'], "%Y-%m-%d")
         return expenses
+        
+    def get_expense_by_id(expense_id):
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM expenses WHERE id = %s", (expense_id,))
+        expense = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if expense and isinstance(expense['date'], str):
+            expense['date'] = datetime.strptime(expense['date'], "%Y-%m-%d")
+        return expense
+        
+    def update_expense_in_db(expense_id, date, amount, description, category):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE expenses SET date = %s, amount = %s, description = %s, category = %s WHERE id = %s",
+            (date, amount, description, category, expense_id)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+    def delete_expense_from_db(expense_id):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM expenses WHERE id = %s", (expense_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
 
 else:
     DB_PATH = "expenses.db"
@@ -93,7 +123,7 @@ else:
     def fetch_expenses_from_db():
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM expenses")
+        cursor.execute("SELECT * FROM expenses ORDER BY date DESC")
         rows = cursor.fetchall()
         expenses = []
         for row in rows:
@@ -107,6 +137,43 @@ else:
         cursor.close()
         conn.close()
         return expenses
+        
+    def get_expense_by_id(expense_id):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM expenses WHERE id = ?", (expense_id,))
+        row = cursor.fetchone()
+        expense = None
+        if row:
+            expense = {
+                'id': row['id'],
+                'date': datetime.strptime(row['date'], "%Y-%m-%d"),
+                'amount': row['amount'],
+                'description': row['description'],
+                'category': row['category']
+            }
+        cursor.close()
+        conn.close()
+        return expense
+        
+    def update_expense_in_db(expense_id, date, amount, description, category):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE expenses SET date = ?, amount = ?, description = ?, category = ? WHERE id = ?",
+            (date, amount, description, category, expense_id)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+    def delete_expense_from_db(expense_id):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
 
 def create_expenses_table():
     if USE_MYSQL:
@@ -175,6 +242,7 @@ HTML = """
 <head>
     <title>Expense Tracker Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         body { background: linear-gradient(135deg, #a8c0ff 0%, #f8fafc 100%); }
         .card { border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
@@ -288,9 +356,21 @@ HTML = """
             {% if today_expenses %}
                 <ul class="list-group">
                 {% for expense in today_expenses %}
-                    <li class="list-group-item">
-                        <span class="badge bg-secondary category-badge">{{ expense['category'] }}</span>
-                        ₹{{ expense['amount'] }} - {{ expense['description'] }}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-secondary category-badge">{{ expense['category'] }}</span>
+                            ₹{{ expense['amount'] }} - {{ expense['description'] }}
+                        </div>
+                        <div class="expense-actions">
+                            <a href="/edit/{{ expense['id'] }}" class="action-icon edit-icon" title="Edit">
+                                <i class="bi bi-pencil-square"></i>
+                            </a>
+                            <form method="post" action="/delete/{{ expense['id'] }}" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this expense?');">
+                                <button type="submit" class="action-icon delete-icon border-0 bg-transparent p-0" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </div>
                     </li>
                 {% endfor %}
                 </ul>
@@ -314,11 +394,45 @@ HTML = """
             </form>
             <h5>{{ month_str }}</h5>
             {% if month_expenses %}
+                <style>
+                    .expense-actions {
+                        visibility: hidden;
+                    }
+                    .list-group-item:hover .expense-actions {
+                        visibility: visible;
+                    }
+                    .action-icon {
+                        cursor: pointer;
+                        margin-left: 8px;
+                        color: #6c757d;
+                    }
+                    .action-icon:hover {
+                        transform: scale(1.2);
+                    }
+                    .edit-icon {
+                        color: #0d6efd;
+                    }
+                    .delete-icon {
+                        color: #dc3545;
+                    }
+                </style>
                 <ul class="list-group">
                 {% for expense in month_expenses %}
-                    <li class="list-group-item">
-                        <span class="badge bg-info category-badge">{{ expense['category'] }}</span>
-                        {{ expense['date'].strftime('%Y-%m-%d') }}: ₹{{ expense['amount'] }} - {{ expense['description'] }}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-info category-badge">{{ expense['category'] }}</span>
+                            {{ expense['date'].strftime('%Y-%m-%d') }}: ₹{{ expense['amount'] }} - {{ expense['description'] }}
+                        </div>
+                        <div class="expense-actions">
+                            <a href="/edit/{{ expense['id'] }}" class="action-icon edit-icon" title="Edit">
+                                <i class="bi bi-pencil-square"></i>
+                            </a>
+                            <form method="post" action="/delete/{{ expense['id'] }}" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this expense?');">
+                                <button type="submit" class="action-icon delete-icon border-0 bg-transparent p-0" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </div>
                     </li>
                 {% endfor %}
                 </ul>
@@ -410,8 +524,99 @@ def add_expense():
         description = request.form['description']
         category = request.form['category']
         add_expense_to_db(date, amount, description, category)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Error adding expense: {e}")
+    return redirect(url_for('index'))
+
+@app.route('/edit/<int:expense_id>', methods=['GET', 'POST'])
+def edit_expense(expense_id):
+    expense = get_expense_by_id(expense_id)
+    if not expense:
+        return redirect(url_for('index'))
+    
+    if request.method == 'POST':
+        try:
+            date = request.form['date']
+            amount = float(request.form['amount'])
+            description = request.form['description']
+            category = request.form['category']
+            update_expense_in_db(expense_id, date, amount, description, category)
+            return redirect(url_for('index'))
+        except Exception as e:
+            print(f"Error updating expense: {e}")
+    
+    # For GET request, render the edit form
+    today = datetime.now()
+    today_str = today.strftime("%Y-%m-%d")
+    expense_date = expense['date'].strftime("%Y-%m-%d") if expense['date'] else today_str
+    
+    return render_template_string(
+        '''
+        <!doctype html>
+        <html lang="en">
+        <head>
+            <title>Edit Expense</title>
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+            <style>
+                body { background: linear-gradient(135deg, #a8c0ff 0%, #f8fafc 100%); padding: 20px; }
+                .card { border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+                .dashboard-header { background: linear-gradient(90deg, #1976d2 0%, #64b5f6 100%); color: #fff; border-radius: 16px 16px 0 0; }
+            </style>
+        </head>
+        <body>
+        <div class="container py-4">
+            <div class="dashboard-header p-4 mb-4">
+                <h2><span>✏️</span> Edit Expense</h2>
+            </div>
+            <div class="card mb-4">
+                <div class="card-body">
+                    <form method="post" action="/edit/{{ expense_id }}" class="row g-3">
+                        <div class="col-12 col-md-3">
+                            <label for="amount" class="form-label">Amount (₹)</label>
+                            <input type="number" step="0.01" name="amount" id="amount" class="form-control" value="{{ amount }}" required>
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <label for="description" class="form-label">Description</label>
+                            <input type="text" name="description" id="description" class="form-control" value="{{ description }}" required>
+                        </div>
+                        <div class="col-12 col-md-2">
+                            <label for="category" class="form-label">Category</label>
+                            <select name="category" id="category" class="form-select" required>
+                                {% for cat in categories %}
+                                <option value="{{ cat }}" {% if cat == current_category %}selected{% endif %}>{{ cat }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-2">
+                            <label for="date" class="form-label">Date</label>
+                            <input type="date" name="date" id="date" class="form-control" value="{{ expense_date }}" required>
+                        </div>
+                        <div class="col-12 mt-4">
+                            <button type="submit" class="btn btn-primary">Update Expense</button>
+                            <a href="/" class="btn btn-secondary ms-2">Cancel</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        </body>
+        </html>
+        ''',
+        expense_id=expense_id,
+        amount=expense['amount'],
+        description=expense['description'],
+        current_category=expense['category'],
+        expense_date=expense_date,
+        categories=CATEGORIES
+    )
+
+@app.route('/delete/<int:expense_id>', methods=['POST'])
+def delete_expense(expense_id):
+    try:
+        delete_expense_from_db(expense_id)
+    except Exception as e:
+        print(f"Error deleting expense: {e}")
     return redirect(url_for('index'))
 
 @app.route('/set_budget', methods=['POST'])
