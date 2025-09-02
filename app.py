@@ -17,17 +17,23 @@ budget = 0
 
 # Default to MySQL if DATABASE_URL is provided
 USE_MYSQL = os.environ.get('DATABASE_URL') is not None
+# Define SQLite path for fallback
+DB_PATH = "expenses.db"
 
 if USE_MYSQL:
-    db_url = os.environ.get('DATABASE_URL')
-    url = urlparse(db_url)
-    db_config = {
-        'host': url.hostname,
-        'user': url.username,
-        'password': url.password,
-        'database': url.path.lstrip('/'),
-        'port': url.port or 3306
-    }
+    try:
+        db_url = os.environ.get('DATABASE_URL')
+        url = urlparse(db_url)
+        db_config = {
+            'host': url.hostname,
+            'user': url.username,
+            'password': url.password,
+            'database': url.path.lstrip('/'),
+            'port': url.port or 3306
+        }
+    except Exception as e:
+        print(f"Error parsing DATABASE_URL: {e}")
+        USE_MYSQL = False
 
     def get_db_connection():
         try:
@@ -48,9 +54,12 @@ if USE_MYSQL:
                     conn.close()
                     # Try connecting again with the database
                     return mysql.connector.connect(**db_config)
-                except mysql.connector.Error as err:
-                    print(f"Failed to create database: {err}")
-                    raise
+                except mysql.connector.Error as inner_err:
+                    print(f"Failed to create database: {inner_err}")
+                    # Fall back to SQLite if MySQL connection fails
+                    global USE_MYSQL
+                    USE_MYSQL = False
+                    return sqlite3.connect(DB_PATH)
             raise
 
     def add_expense_to_db(date, amount, description, category, user_id=None):
@@ -469,7 +478,19 @@ def initialize_database():
         print("Database tables created successfully")
     except Exception as e:
         print(f"Error initializing database: {e}")
-        raise
+        # If MySQL initialization fails, fall back to SQLite
+        global USE_MYSQL
+        if USE_MYSQL:
+            print("Falling back to SQLite database")
+            USE_MYSQL = False
+            # Try again with SQLite
+            try:
+                create_users_table()
+                create_expenses_table()
+                print("SQLite database initialized successfully")
+            except Exception as sqlite_err:
+                print(f"Error initializing SQLite database: {sqlite_err}")
+                raise
 
 # Initialize database when app starts
 initialize_database()
