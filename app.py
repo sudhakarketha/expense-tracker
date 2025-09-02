@@ -154,52 +154,13 @@ def create_expenses_table():
             cursor.close()
             conn.close()
 
-def create_tables():
-    conn = get_db_connection()  # Use your existing connection function
-    cursor = conn.cursor()
-    
-    try:
-        if USE_MYSQL:
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS interest (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    principal DECIMAL(10,2) NOT NULL,
-                    rate DECIMAL(5,2) NOT NULL,
-                    time DECIMAL(5,2) NOT NULL,
-                    interest DECIMAL(10,2) NOT NULL,
-                    calculated_on DATE NOT NULL
-                )
-            """)
-        else:
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS interest (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    principal REAL NOT NULL,
-                    rate REAL NOT NULL,
-                    time REAL NOT NULL,
-                    interest REAL NOT NULL,
-                    calculated_on TEXT NOT NULL
-                )
-            """)
-        conn.commit()
-        print("Interest table created or already exists")
-    except Exception as e:
-        if USE_MYSQL and isinstance(e, mysql.connector.Error):
-            print(f"Error creating interest table: {e}")
-        else:
-            print(f"Error creating interest table: {e}")
-        conn.rollback()
-        raise
-    finally:
-        cursor.close()
-        conn.close()
+# Interest table functionality has been removed
 
 # Function to initialize the database and create all required tables
 def initialize_database():
     try:
-        # Ensure tables exist at startup
+        # Ensure expenses table exists at startup
         create_expenses_table()
-        create_tables()
         print("Database tables created successfully")
     except Exception as e:
         print(f"Error initializing database: {e}")
