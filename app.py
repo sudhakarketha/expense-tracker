@@ -10,7 +10,8 @@ app = Flask(__name__)
 CATEGORIES = ["Food", "Transport", "Shopping", "Bills", "Other"]
 budget = 0
 
-USE_MYSQL = os.environ.get('USE_MYSQL', '0') == '1'
+# Default to MySQL if DATABASE_URL is provided
+USE_MYSQL = os.environ.get('DATABASE_URL') is not None
 
 if USE_MYSQL:
     db_url = os.environ.get('DATABASE_URL')
@@ -24,7 +25,28 @@ if USE_MYSQL:
     }
 
     def get_db_connection():
-        return mysql.connector.connect(**db_config)
+        try:
+            conn = mysql.connector.connect(**db_config)
+            return conn
+        except mysql.connector.Error as err:
+            print(f"Error connecting to MySQL database: {err}")
+            # Attempt to create the database if it doesn't exist
+            if err.errno == mysql.connector.errorcode.ER_BAD_DB_ERROR:
+                try:
+                    # Connect without specifying database
+                    temp_config = db_config.copy()
+                    temp_config.pop('database')
+                    conn = mysql.connector.connect(**temp_config)
+                    cursor = conn.cursor()
+                    cursor.execute(f"CREATE DATABASE IF NOT EXISTS {db_config['database']}")
+                    cursor.close()
+                    conn.close()
+                    # Try connecting again with the database
+                    return mysql.connector.connect(**db_config)
+                except mysql.connector.Error as err:
+                    print(f"Failed to create database: {err}")
+                    raise
+            raise
 
     def add_expense_to_db(date, amount, description, category):
         conn = get_db_connection()
@@ -90,54 +112,101 @@ def create_expenses_table():
     if USE_MYSQL:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS expenses (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                date DATE NOT NULL,
-                amount DECIMAL(10,2) NOT NULL,
-                description VARCHAR(255) NOT NULL,
-                category VARCHAR(50) NOT NULL
-            )
-        """)
-        conn.commit()
-        cursor.close()
-        conn.close()
+        try:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS expenses (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    date DATE NOT NULL,
+                    amount DECIMAL(10,2) NOT NULL,
+                    description VARCHAR(255) NOT NULL,
+                    category VARCHAR(50) NOT NULL
+                )
+            """)
+            conn.commit()
+            print("Expenses table created or already exists")
+        except mysql.connector.Error as err:
+            print(f"Error creating expenses table: {err}")
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
+            conn.close()
     else:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS expenses (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT NOT NULL,
-                amount REAL NOT NULL,
-                description TEXT NOT NULL,
-                category TEXT NOT NULL
-            )
-        """)
-        conn.commit()
-        cursor.close()
-        conn.close()
+        try:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS expenses (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT NOT NULL,
+                    amount REAL NOT NULL,
+                    description TEXT NOT NULL,
+                    category TEXT NOT NULL
+                )
+            """)
+            conn.commit()
+            print("SQLite expenses table created or already exists")
+        except sqlite3.Error as e:
+            print(f"Error creating SQLite expenses table: {e}")
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
+            conn.close()
 
 def create_tables():
     conn = get_db_connection()  # Use your existing connection function
     cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS interest (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            principal REAL NOT NULL,
-            rate REAL NOT NULL,
-            time REAL NOT NULL,
-            interest REAL NOT NULL,
-            calculated_on TEXT NOT NULL
-        )
-    """)
-    conn.commit()
-    cursor.close()
-    conn.close()
+    
+    try:
+        if USE_MYSQL:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS interest (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    principal DECIMAL(10,2) NOT NULL,
+                    rate DECIMAL(5,2) NOT NULL,
+                    time DECIMAL(5,2) NOT NULL,
+                    interest DECIMAL(10,2) NOT NULL,
+                    calculated_on DATE NOT NULL
+                )
+            """)
+        else:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS interest (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    principal REAL NOT NULL,
+                    rate REAL NOT NULL,
+                    time REAL NOT NULL,
+                    interest REAL NOT NULL,
+                    calculated_on TEXT NOT NULL
+                )
+            """)
+        conn.commit()
+        print("Interest table created or already exists")
+    except Exception as e:
+        if USE_MYSQL and isinstance(e, mysql.connector.Error):
+            print(f"Error creating interest table: {e}")
+        else:
+            print(f"Error creating interest table: {e}")
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
 
-# Ensure table exists at startup
-create_expenses_table()
-create_tables()
+# Function to initialize the database and create all required tables
+def initialize_database():
+    try:
+        # Ensure tables exist at startup
+        create_expenses_table()
+        create_tables()
+        print("Database tables created successfully")
+    except Exception as e:
+        print(f"Error initializing database: {e}")
+        raise
+
+# Initialize database when app starts
+initialize_database()
 
 HTML = """
 <!doctype html>
