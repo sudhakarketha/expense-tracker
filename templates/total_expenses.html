@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Total Expenses - Expense Tracker</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        body {
+            padding-top: 4.5rem;
+            background-color: #f8f9fa;
+        }
+        /* Styles for action icons */
+        .action-icons {
+            display: flex;
+            gap: 10px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        tr:hover .action-icons {
+            opacity: 1;
+        }
+        .icon-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+        .edit-icon {
+            color: #0d6efd;
+        }
+        .edit-icon:hover {
+            background-color: rgba(13, 110, 253, 0.1);
+        }
+        .delete-icon {
+            color: #dc3545;
+        }
+        .delete-icon:hover {
+            background-color: rgba(220, 53, 69, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-md navbar-dark bg-dark fixed-top">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('dashboard') }}">Expense Tracker</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="{{ url_for('total_expenses') }}">Total Expenses</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('add_expense') }}">Add Expense</a>
+                    </li>
+                </ul>
+                <div class="navbar-nav">
+                    <span class="nav-item nav-link text-light">Welcome, {{ session.username }}</span>
+                    <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+<div class="container mt-4">
+    <h1 class="mb-4">Total Expenses History</h1>
+    
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Expense Summary</h5>
+                    <h2 class="text-primary">Total: ₹{{ total }}</h2>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">All Expenses</h5>
+                    <div class="control-panel d-flex gap-2">
+                        <div class="input-group">
+                            <input type="text" id="searchInput" class="form-control" placeholder="Search description...">
+                            <button id="searchButton" class="btn btn-outline-secondary" type="button">
+                                <i class="bi bi-search"></i>
+                            </button>
+                        </div>
+                        <select id="categoryFilter" class="form-select">
+                            <option value="">All Categories</option>
+                            {% for category in categories_list %}
+                            <option value="{{ category }}">{{ category }}</option>
+                            {% endfor %}
+                        </select>
+                        <input type="date" id="dateFilter" class="form-control" placeholder="Filter by date">
+                        <button id="downloadPDF" class="btn btn-success">
+                            <i class="bi bi-download"></i> Export PDF
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Description</th>
+                                    <th>Category</th>
+                                    <th>Amount</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for expense in expenses %}
+                                <tr>
+                                    <td>{{ expense.date.strftime('%Y-%m-%d') }}</td>
+                                    <td>{{ expense.description }}</td>
+                                    <td>
+                                        <span class="badge bg-{{ 'primary' if expense.category == 'Utilities' else 'success' }}">{{ expense.category }}</span>
+                                    </td>
+                                    <td>₹{{ expense.amount }}</td>
+                                    <td>
+                                        <div class="action-icons">
+                                            <a href="{{ url_for('edit_expense', id=expense.id) }}" class="icon-btn edit-icon">
+                                                <i class="bi bi-pencil-square"></i>
+                                            </a>
+                                            <a href="#" class="icon-btn delete-icon" onclick="confirmDelete('{{ expense.id }}')">
+                                                <i class="bi bi-trash"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Confirm delete function
+    function confirmDelete(id) {
+        if (confirm('Are you sure you want to delete this expense?')) {
+            window.location.href = `/delete/${id.toString()}`;
+        }
+    }
+    
+    // Initialize table features when document is loaded
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeTableFeatures();
+    });
+    
+    // Initialize table features: search, filter, and download
+    function initializeTableFeatures() {
+        const table = document.querySelector('table');
+        if (!table) return;
+        
+        const rows = Array.from(table.querySelectorAll('tbody tr'));
+        const searchInput = document.getElementById('searchInput');
+        const searchButton = document.getElementById('searchButton');
+        const categoryFilter = document.getElementById('categoryFilter');
+        const dateFilter = document.getElementById('dateFilter');
+        const downloadButton = document.getElementById('downloadPDF');
+        
+        // Search functionality
+        function performSearch() {
+            const searchTerm = searchInput.value.toLowerCase();
+            const selectedCategory = categoryFilter.value;
+            const selectedDate = dateFilter.value;
+            
+            rows.forEach(row => {
+                const description = row.cells[1].textContent.toLowerCase();
+                const category = row.cells[2].textContent.toLowerCase();
+                const date = row.cells[0].textContent;
+                
+                const matchesSearch = searchTerm === '' || description.includes(searchTerm);
+                const matchesCategory = selectedCategory === '' || category.includes(selectedCategory.toLowerCase());
+                const matchesDate = selectedDate === '' || date === selectedDate;
+                
+                row.style.display = (matchesSearch && matchesCategory && matchesDate) ? '' : 'none';
+            });
+        }
+        
+        // Event listeners
+        searchButton.addEventListener('click', performSearch);
+        searchInput.addEventListener('keyup', function(e) {
+            if (e.key === 'Enter') performSearch();
+        });
+        categoryFilter.addEventListener('change', performSearch);
+        dateFilter.addEventListener('change', performSearch);
+        
+        // Download PDF functionality
+        downloadButton.addEventListener('click', function() {
+            // Get visible rows
+            const visibleRows = rows.filter(row => row.style.display !== 'none');
+            
+            // Create a window to print
+            const printWindow = window.open('', '', 'height=600,width=800');
+            
+            // Create HTML content for PDF
+            let htmlContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Expenses Report</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                        th { background-color: #f2f2f2; }
+                        h1 { color: #333; }
+                    </style>
+                </head>
+                <body>
+                    <h1>Expenses Report</h1>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Description</th>
+                                <th>Category</th>
+                                <th>Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            // Add rows to HTML content
+            visibleRows.forEach(row => {
+                const date = row.cells[0].textContent;
+                const description = row.cells[1].textContent;
+                const category = row.cells[2].textContent.trim();
+                const amount = row.cells[3].textContent;
+                
+                htmlContent += `
+                    <tr>
+                        <td>${date}</td>
+                        <td>${description}</td>
+                        <td>${category}</td>
+                        <td>${amount}</td>
+                    </tr>
+                `;
+            });
+            
+            // Close HTML content
+            htmlContent += `
+                        </tbody>
+                    </table>
+                </body>
+                </html>
+            `;
+            
+            // Write to the new window and print as PDF
+            printWindow.document.write(htmlContent);
+            printWindow.document.close();
+            printWindow.focus();
+            
+            // Add slight delay to ensure content is loaded before printing
+            setTimeout(() => {
+                printWindow.print();
+                printWindow.close();
+            }, 250);
+        });
+    }
+</script>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

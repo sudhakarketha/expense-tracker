@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expense Tracker</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body {
+            padding-top: 2rem;
+            background-color: #f8f9fa;
+        }
+        .jumbotron {
+            background-color: #e9ecef;
+            padding: 2rem;
+            border-radius: 0.3rem;
+            margin-bottom: 2rem;
+        }
+        .feature-box {
+            padding: 1.5rem;
+            border-radius: 0.3rem;
+            margin-bottom: 1.5rem;
+            background-color: white;
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+            transition: transform 0.3s;
+        }
+        .feature-box:hover {
+            transform: translateY(-5px);
+        }
+        .feature-icon {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            color: #0d6efd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="jumbotron text-center">
+            <h1 class="display-4">Welcome to Expense Tracker</h1>
+            <p class="lead">Manage your expenses easily and efficiently</p>
+            <hr class="my-4">
+            <p>Track your spending, set budgets, and gain insights into your financial habits.</p>
+            <div class="d-flex justify-content-center gap-2">
+                <a class="btn btn-primary btn-lg" href="/login" role="button">Login</a>
+                <a class="btn btn-outline-primary btn-lg" href="/register" role="button">Register</a>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-4">
+                <div class="feature-box text-center">
+                    <div class="feature-icon">📊</div>
+                    <h3>Track Expenses</h3>
+                    <p>Easily record and categorize your daily expenses</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="feature-box text-center">
+                    <div class="feature-icon">📈</div>
+                    <h3>Visualize Data</h3>
+                    <p>View charts and reports to understand your spending habits</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="feature-box text-center">
+                    <div class="feature-icon">💰</div>
+                    <h3>Budget Planning</h3>
+                    <p>Set budgets and get alerts when you're close to limits</p>
+                </div>
+            </div>
+        </div>
+
+        <footer class="mt-5 text-center text-muted">
+            <p>&copy; 2025 Expense Tracker. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Expense Tracker</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            padding-top: 4.5rem;
+            background-color: #f8f9fa;
+        }
+        .expense-card {
+            transition: transform 0.2s;
+        }
+        .expense-card:hover {
+            transform: translateY(-5px);
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+        /* Styles for action icons */
+        .action-icons {
+            display: flex;
+            gap: 10px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        tr:hover .action-icons {
+            opacity: 1;
+        }
+        .icon-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+        .edit-icon {
+            color: #0d6efd;
+        }
+        .edit-icon:hover {
+            background-color: rgba(13, 110, 253, 0.1);
+        }
+        .delete-icon {
+            color: #dc3545;
+        }
+        .delete-icon:hover {
+            background-color: rgba(220, 53, 69, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-md navbar-dark bg-dark fixed-top">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('dashboard') }}">Expense Tracker</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="{{ url_for('dashboard') }}">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('total_expenses') }}">Total Expenses</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('add_expense') }}">Add Expense</a>
+                    </li>
+                </ul>
+                <div class="navbar-nav">
+                    <span class="nav-item nav-link text-light">Welcome, {{ session.username }}</span>
+                    <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h2 class="card-title">Expense Summary</h2>
+                        <h3 class="text-primary">Total: ₹{{ "%.2f"|format(total) }}</h3>
+                        <a href="{{ url_for('add_expense') }}" class="btn btn-primary mt-2">Add New Expense</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h2 class="card-title">Expense Distribution</h2>
+                        <div class="chart-container">
+                            <canvas id="expenseChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <h2 class="card-title mb-4">Recent Expenses</h2>
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <div class="input-group">
+                            <input type="text" id="searchInput" class="form-control" placeholder="Search expenses...">
+                            <button class="btn btn-outline-secondary" type="button" id="searchButton">
+                                <i class="bi bi-search"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <select id="categoryFilter" class="form-select">
+                            <option value="">All Categories</option>
+                            {% for category in categories_list %}
+                                <option value="{{ category }}">{{ category }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <input type="month" id="monthFilter" class="form-control">
+                    </div>
+                    <div class="col-md-2 text-end">
+                        <button id="downloadCSV" class="btn btn-outline-success">
+                            <i class="bi bi-download"></i> Export
+                        </button>
+                    </div>
+                </div>
+                {% if expenses %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Description</th>
+                                    <th>Category</th>
+                                    <th>Amount</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for expense in expenses %}
+                                    <tr>
+                                        <td>{{ expense['date'].strftime('%Y-%m-%d') if expense['date'] is not string and expense['date'] is defined else expense['date'] }}</td>
+                                        <td>{{ expense['description'] }}</td>
+                                        <td>
+                                            {% if expense['category'] %}
+                                                <span class="badge bg-info text-dark">{{ expense['category'] }}</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">Uncategorized</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>${{ "%.2f"|format(expense['amount']) }}</td>
+                                        <td>
+                                            {% if expense['id'] is defined and expense['id'] %}
+                                                <div class="action-icons">
+                                                    <a href="{{ url_for('edit_expense', id=expense['id']) }}" class="icon-btn edit-icon"><i class="bi bi-pencil-square"></i></a>
+                                                    <a href="{{ url_for('delete_expense', id=expense['id']) }}" class="icon-btn delete-icon" onclick="return confirm('Are you sure you want to delete this expense?');"><i class="bi bi-trash"></i></a>
+                                                </div>
+                                            {% else %}
+                                                <span class="text-muted">ID missing</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="alert alert-info">No expenses found. <a href="{{ url_for('add_expense') }}">Add your first expense</a>.</div>
+                {% endif %}
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Chart initialization
+        document.addEventListener('DOMContentLoaded', function() {
+            const ctx = document.getElementById('expenseChart').getContext('2d');
+            
+            // Parse data from Flask
+            const categoryLabels = JSON.parse('{{ categories|tojson }}');
+            const categoryAmounts = JSON.parse('{{ amounts|tojson }}');
+            
+            // Generate random colors for chart
+            const colors = generateColors(categoryLabels.length);
+            
+            const chart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: categoryLabels,
+                    datasets: [{
+                        data: categoryAmounts,
+                        backgroundColor: colors,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                        }
+                    }
+                }
+            });
+            
+            // Search, filter and download functionality
+            initializeTableFeatures();
+        });
+        
+        // Generate random colors for chart segments
+        function generateColors(count) {
+            const colors = [];
+            for (let i = 0; i < count; i++) {
+                const hue = (i * 137) % 360; // Golden angle approximation for good distribution
+                colors.push(`hsl(${hue}, 70%, 60%)`);
+            }
+            return colors;
+        }
+        
+        // Initialize table features: search, filter, and download
+        function initializeTableFeatures() {
+            const table = document.querySelector('table');
+            if (!table) return;
+            
+            const rows = Array.from(table.querySelectorAll('tbody tr'));
+            const searchInput = document.getElementById('searchInput');
+            const searchButton = document.getElementById('searchButton');
+            const categoryFilter = document.getElementById('categoryFilter');
+            const monthFilter = document.getElementById('monthFilter');
+            const downloadButton = document.getElementById('downloadCSV');
+            
+            // Search functionality
+            function performSearch() {
+                const searchTerm = searchInput.value.toLowerCase();
+                const selectedCategory = categoryFilter.value;
+                const selectedMonth = monthFilter.value;
+                
+                rows.forEach(row => {
+                    const description = row.cells[1].textContent.toLowerCase();
+                    const category = row.cells[2].textContent.toLowerCase();
+                    const date = row.cells[0].textContent;
+                    const rowMonth = date.substring(0, 7); // Extract YYYY-MM
+                    
+                    const matchesSearch = searchTerm === '' || description.includes(searchTerm);
+                    const matchesCategory = selectedCategory === '' || category.includes(selectedCategory.toLowerCase());
+                    const matchesMonth = selectedMonth === '' || rowMonth === selectedMonth;
+                    
+                    row.style.display = matchesSearch && matchesCategory && matchesMonth ? '' : 'none';
+                });
+            }
+            
+            // Event listeners
+            searchButton.addEventListener('click', performSearch);
+            searchInput.addEventListener('keyup', function(e) {
+                if (e.key === 'Enter') performSearch();
+            });
+            categoryFilter.addEventListener('change', performSearch);
+            monthFilter.addEventListener('change', performSearch);
+            
+            // Download CSV functionality
+            downloadButton.addEventListener('click', function() {
+                // Get visible rows
+                const visibleRows = rows.filter(row => row.style.display !== 'none');
+                
+                // Create CSV content
+                let csvContent = 'Date,Description,Category,Amount\n';
+                
+                visibleRows.forEach(row => {
+                    const date = row.cells[0].textContent;
+                    const description = row.cells[1].textContent.replace(/,/g, ' ');
+                    const category = row.cells[2].textContent.trim();
+                    const amount = row.cells[3].textContent;
+                    
+                    csvContent += `${date},"${description}",${category},${amount}\n`;
+                });
+                
+                // Create download link
+                const encodedUri = encodeURI('data:text/csv;charset=utf-8,' + csvContent);
+                const link = document.createElement('a');
+                link.setAttribute('href', encodedUri);
+                link.setAttribute('download', 'expenses.csv');
+                document.body.appendChild(link);
+                
+                // Trigger download and clean up
+                link.click();
+                document.body.removeChild(link);
+            });
+        }
+    </script>
+</body>
+</html>
