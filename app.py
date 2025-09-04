@@ -16,11 +16,140 @@ except ImportError:
     MYSQL_AVAILABLE = False
 
 # Configuration
-USE_MYSQL = os.environ.get('USE_MYSQL', 'False').lower() in ('true', '1', 't')
-MYSQL_HOST = os.environ.get('MYSQL_HOST', 'localhost')
-MYSQL_USER = os.environ.get('MYSQL_USER', 'root')
-MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD', '')
-MYSQL_DATABASE = os.environ.get('MYSQL_DATABASE', 'expense_tracker')
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
+
+# Parse DATABASE_URL if provided (Clever Cloud format)
+if DATABASE_URL:
+    # Parse the database URL
+    try:
+        print(f"Attempting to parse DATABASE_URL: {DATABASE_URL[:10]}...")
+        
+        # Handle the exact Clever Cloud MySQL URL format from the environment variable
+        if DATABASE_URL.startswith('mysql://u9thvqovg:wCakTLfiBIvZcJGuZgWrab3l6kultvvcl5akzxtfg-mysql'):
+            print("Detected exact Clever Cloud MySQL URL format from environment variable")
+            # Extract the specific parts from the known format
+            MYSQL_USER = 'u9thvqovg'
+            MYSQL_PASSWORD = 'wCakTLfiBIvZcJGuZgWrab3l6kultvvcl5akzxtfg'
+            MYSQL_HOST = 'cl5akzxtfg-mysql.services.clever-cloud.com'
+            MYSQL_PORT = 3306
+            MYSQL_DATABASE = 'b3l6kultvvcl5akzxtfg'
+            USE_MYSQL = True
+            print(f"Using predefined Clever Cloud MySQL connection parameters: host={MYSQL_HOST}, user={MYSQL_USER}, database={MYSQL_DATABASE}")
+        # Handle Clever Cloud MySQL URL format with triple slash
+        elif DATABASE_URL.startswith('mysql:///'):
+            # Special case for Clever Cloud format with triple slash
+            # Format: mysql:///u9thvqovg:wCakTLfiBIvZcJGuZgWrab3l6kultvvcl5akzxtfg@cl5akzxtfg-mysql.services.clever-cloud.com:3306/b3l6kultvvcl5akzxtfg
+            print("Detected Clever Cloud triple-slash MySQL URL format")
+            url_without_prefix = DATABASE_URL[9:]  # Skip 'mysql:///' prefix
+            
+            # Extract credentials and host info
+            if '@' in url_without_prefix:
+                credentials, host_info = url_without_prefix.split('@', 1)
+                
+                # Extract username and password
+                if ':' in credentials:
+                    MYSQL_USER, MYSQL_PASSWORD = credentials.split(':', 1)
+                    
+                    # Extract host, port, and database
+                    if ':' in host_info and '/' in host_info:
+                        host_port, MYSQL_DATABASE = host_info.rsplit('/', 1)
+                        MYSQL_HOST, port_str = host_port.rsplit(':', 1)
+                        MYSQL_PORT = int(port_str)
+                        USE_MYSQL = True
+                        print(f"Parsed Clever Cloud MySQL URL: host={MYSQL_HOST}, user={MYSQL_USER}, database={MYSQL_DATABASE}")
+                    else:
+                        print("Failed to parse host, port, and database from Clever Cloud URL")
+                else:
+                    print("Failed to parse username and password from Clever Cloud URL")
+            else:
+                print("Failed to parse credentials and host info from Clever Cloud URL")
+        elif DATABASE_URL.startswith('mysql:'):
+            import re
+            # Try standard format first: mysql://user:password@host:port/database
+            pattern = r'mysql://([^:]+):([^@]+)@([^:/]+)(?::([0-9]+))?/(.+)'
+            match = re.match(pattern, DATABASE_URL)
+            
+            if match:
+                MYSQL_USER = match.group(1)
+                MYSQL_PASSWORD = match.group(2)
+                MYSQL_HOST = match.group(3)
+                MYSQL_PORT = int(match.group(4) or 3306)
+                MYSQL_DATABASE = match.group(5)
+                USE_MYSQL = True
+                print(f"Parsed MySQL connection from DATABASE_URL: host={MYSQL_HOST}, user={MYSQL_USER}, database={MYSQL_DATABASE}")
+            else:
+                # Try alternative format that might be used by Clever Cloud
+                # Format might be like: mysql://u9thvqovg:wCakTLfiBIvZcJGuZgWrab3l6kultvvcl5akzxtfg-mysql.services.clever-cloud.com:3306/b3l6kultvvcl5akzxtfg
+                print("Standard MySQL URL pattern didn't match, trying alternative parsing...")
+                
+                # Extract username and the rest
+                parts = DATABASE_URL[8:].split(':', 1)  # Skip 'mysql://' prefix
+                if len(parts) == 2:
+                    username = parts[0]
+                    rest = parts[1]
+                    
+                    # Extract password and the rest
+                    parts = rest.split('@', 1)
+                    if len(parts) == 2:
+                        password = parts[0]
+                        host_port_db = parts[1]
+                        
+                        # Extract host, port, and database
+                        host_parts = host_port_db.split(':', 1)
+                        if len(host_parts) == 2:
+                            host = host_parts[0]
+                            port_db = host_parts[1]
+                            
+                            # Extract port and database
+                            port_db_parts = port_db.split('/', 1)
+                            if len(port_db_parts) == 2:
+                                port = int(port_db_parts[0])
+                                database = port_db_parts[1]
+                                
+                                MYSQL_USER = username
+                                MYSQL_PASSWORD = password
+                                MYSQL_HOST = host
+                                MYSQL_PORT = port
+                                MYSQL_DATABASE = database
+                                USE_MYSQL = True
+                                print(f"Parsed MySQL connection using alternative method: host={MYSQL_HOST}, user={MYSQL_USER}, database={MYSQL_DATABASE}")
+                            else:
+                                print("Failed to parse port and database")
+                        else:
+                            print("Failed to parse host and port")
+                    else:
+                        print("Failed to parse password and host")
+                else:
+                    print("Failed to parse username")
+                    
+                if not USE_MYSQL:
+                    print("Failed to parse DATABASE_URL with alternative method, falling back to default configuration")
+                    USE_MYSQL = os.environ.get('USE_MYSQL', 'False').lower() in ('true', '1', 't')
+                    MYSQL_HOST = os.environ.get('MYSQL_HOST', 'localhost')
+                    MYSQL_USER = os.environ.get('MYSQL_USER', 'root')
+                    MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD', '')
+                    MYSQL_DATABASE = os.environ.get('MYSQL_DATABASE', 'expense_tracker')
+        else:
+            print(f"Unsupported database type in DATABASE_URL: {DATABASE_URL.split(':', 1)[0]}")
+            USE_MYSQL = os.environ.get('USE_MYSQL', 'False').lower() in ('true', '1', 't')
+            MYSQL_HOST = os.environ.get('MYSQL_HOST', 'localhost')
+            MYSQL_USER = os.environ.get('MYSQL_USER', 'root')
+            MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD', '')
+            MYSQL_DATABASE = os.environ.get('MYSQL_DATABASE', 'expense_tracker')
+    except Exception as e:
+        print(f"Error parsing DATABASE_URL: {e}")
+        USE_MYSQL = os.environ.get('USE_MYSQL', 'False').lower() in ('true', '1', 't')
+        MYSQL_HOST = os.environ.get('MYSQL_HOST', 'localhost')
+        MYSQL_USER = os.environ.get('MYSQL_USER', 'root')
+        MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD', '')
+        MYSQL_DATABASE = os.environ.get('MYSQL_DATABASE', 'expense_tracker')
+else:
+    USE_MYSQL = os.environ.get('USE_MYSQL', 'False').lower() in ('true', '1', 't')
+    MYSQL_HOST = os.environ.get('MYSQL_HOST', 'localhost')
+    MYSQL_USER = os.environ.get('MYSQL_USER', 'root')
+    MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD', '')
+    MYSQL_DATABASE = os.environ.get('MYSQL_DATABASE', 'expense_tracker')
+
 SQLITE_DATABASE = os.environ.get('SQLITE_DATABASE', 'expenses.db')
 
 # Initialize Flask app
@@ -31,12 +160,16 @@ app.secret_key = os.environ.get('SECRET_KEY', 'default_secret_key')
 def get_db_connection():
     if USE_MYSQL and MYSQL_AVAILABLE:
         try:
+            # Use MYSQL_PORT if defined, otherwise default to 3306
+            port = getattr(sys.modules[__name__], 'MYSQL_PORT', 3306)
             conn = mysql.connector.connect(
                 host=MYSQL_HOST,
                 user=MYSQL_USER,
                 password=MYSQL_PASSWORD,
-                database=MYSQL_DATABASE
+                database=MYSQL_DATABASE,
+                port=port
             )
+            print(f"Successfully connected to MySQL database: {MYSQL_HOST}:{port}/{MYSQL_DATABASE}")
             return conn
         except mysql.connector.Error as err:
             print(f"MySQL Connection Error: {err}")
@@ -713,7 +846,20 @@ def health_check():
 @app.route('/health/db')
 def db_health_check():
     if verify_database_connection():
-        return jsonify({'status': 'ok', 'database': 'connected'})
+        db_info = {
+            'status': 'ok', 
+            'database': 'connected',
+            'type': 'MySQL' if USE_MYSQL and MYSQL_AVAILABLE else 'SQLite',
+        }
+        
+        # Add MySQL-specific info if using MySQL
+        if USE_MYSQL and MYSQL_AVAILABLE:
+            db_info.update({
+                'host': MYSQL_HOST,
+                'database': MYSQL_DATABASE,
+                'user': MYSQL_USER
+            })
+        return jsonify(db_info)
     else:
         return jsonify({'status': 'error', 'database': 'disconnected'}), 500
 
@@ -726,8 +872,27 @@ def page_not_found(e):
 def server_error(e):
     return render_template('500.html'), 500
 
+# Function to log database configuration
+def log_database_config():
+    """Log the current database configuration for debugging"""
+    if USE_MYSQL and MYSQL_AVAILABLE:
+        print("\n=== Database Configuration ===")
+        print(f"Database Type: MySQL")
+        print(f"Host: {MYSQL_HOST}")
+        print(f"Port: {getattr(sys.modules[__name__], 'MYSQL_PORT', 3306)}")
+        print(f"User: {MYSQL_USER}")
+        print(f"Database: {MYSQL_DATABASE}")
+        print(f"Password: {'*' * len(MYSQL_PASSWORD) if MYSQL_PASSWORD else 'Not set'}")
+        print("===========================\n")
+    else:
+        print("\n=== Database Configuration ===")
+        print(f"Database Type: SQLite")
+        print(f"Database File: {SQLITE_DATABASE}")
+        print("===========================\n")
+
 # Initialize database on startup
 if __name__ == '__main__':
+    log_database_config()
     initialize_database()
     # Get port from environment variable for cloud deployment (like Render)
     port = int(os.environ.get('PORT', 5000))
