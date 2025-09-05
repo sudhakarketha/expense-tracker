@@ -4,9 +4,17 @@ import sys
 import json
 import sqlite3
 from datetime import datetime
+from decimal import Decimal
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, g, session
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
+
+# Custom JSON encoder to handle Decimal objects
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super(CustomJSONEncoder, self).default(obj)
 
 # Try to import MySQL connector, but don't fail if it's not available
 try:
@@ -155,6 +163,7 @@ SQLITE_DATABASE = os.environ.get('SQLITE_DATABASE', 'expenses.db')
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'default_secret_key')
+app.json_encoder = CustomJSONEncoder
 
 # Database connection function
 def get_db_connection():
@@ -596,7 +605,7 @@ def dashboard():
                            expenses=todays_expenses, 
                            total=total,
                            categories=json.dumps(list(categories.keys())),
-                           amounts=json.dumps(list(categories.values())),
+                           amounts=json.dumps(list(categories.values()), cls=CustomJSONEncoder),
                            categories_list=sorted(list(categories_list)))
 
 @app.route('/total-expenses')
@@ -816,6 +825,9 @@ def api_expenses():
     for expense in expenses:
         if isinstance(expense['date'], datetime):
             expense['date'] = expense['date'].strftime('%Y-%m-%d')
+        # Convert Decimal objects to float for JSON serialization
+        if isinstance(expense['amount'], Decimal):
+            expense['amount'] = float(expense['amount'])
     return jsonify(expenses)
 
 @app.route('/api/expenses/add', methods=['POST'])
