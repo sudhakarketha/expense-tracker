@@ -587,8 +587,12 @@ def dashboard():
     total = sum(expense['amount'] for expense in expenses)
     
     # Get today's date for filtering today's expenses
-    today = datetime.now().date()
-    todays_expenses = [expense for expense in expenses if isinstance(expense['date'], datetime) and expense['date'].date() == today]
+    today = datetime.now()
+    # Compare only year, month, and day components to avoid timezone issues
+    todays_expenses = [expense for expense in expenses if isinstance(expense['date'], datetime) and 
+                      expense['date'].year == today.year and 
+                      expense['date'].month == today.month and 
+                      expense['date'].day == today.day]
     
     # Group expenses by category for chart
     categories = {}

@@ -135,7 +135,7 @@
                             <tbody>
                                 {% for expense in expenses %}
                                 <tr>
-                                    <td>{{ expense.date.strftime('%Y-%m-%d') }}</td>
+                                    <td>{{ expense.date.strftime('%Y-%m-%d') if expense.date is not string and expense.date is defined else expense.date }}</td>
                                     <td>{{ expense.description }}</td>
                                     <td>
                                         <span class="badge bg-{{ 'primary' if expense.category == 'Utilities' else 'success' }}">{{ expense.category }}</span>
