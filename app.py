@@ -586,8 +586,9 @@ def dashboard():
     # No need to filter expenses here as fetch_expenses_from_db now returns only valid expenses
     total = sum(expense['amount'] for expense in expenses)
     
-    # Use all recent expenses instead of filtering to today only
-    recent_expenses = expenses
+    # Get today's date for filtering today's expenses
+    today = datetime.now().date()
+    todays_expenses = [expense for expense in expenses if isinstance(expense['date'], datetime) and expense['date'].date() == today]
     
     # Group expenses by category for chart
     categories = {}
@@ -601,7 +602,7 @@ def dashboard():
             categories[category] = expense['amount']
     
     return render_template('dashboard.html', 
-                           expenses=recent_expenses, 
+                           expenses=todays_expenses, 
                            total=total,
                            categories=json.dumps(list(categories.keys())),
                            amounts=json.dumps(list(categories.values()), cls=CustomJSONEncoder),
