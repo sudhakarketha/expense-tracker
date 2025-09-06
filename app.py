@@ -255,6 +255,25 @@ def initialize_database():
 
 def add_expense_to_db(date, amount, description, category, user_id=None):
     print(f"Adding expense: {date}, {amount}, {description}, {category}, {user_id}")
+    # Ensure date is in the correct format
+    try:
+        # If date is already a string in YYYY-MM-DD format, this will work
+        parsed_date = datetime.strptime(date, '%Y-%m-%d')
+        date_str = date
+    except (ValueError, TypeError):
+        # If date is in another format or is a datetime object
+        try:
+            if isinstance(date, datetime):
+                date_str = date.strftime('%Y-%m-%d')
+            else:
+                # Try to parse with dateutil
+                parsed_date = parser.parse(str(date))
+                date_str = parsed_date.strftime('%Y-%m-%d')
+        except:
+            # If all else fails, use today's date
+            date_str = datetime.utcnow().strftime('%Y-%m-%d')
+    
+    print(f"Normalized date for storage: {date_str}")
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -262,7 +281,7 @@ def add_expense_to_db(date, amount, description, category, user_id=None):
             if USE_MYSQL and MYSQL_AVAILABLE:
                 cursor.execute(
                     "INSERT INTO expenses (date, amount, description, category, user_id) VALUES (%s, %s, %s, %s, %s)",
-                    (date, amount, description, category, user_id)
+                    (date_str, amount, description, category, user_id)
                 )
                 # Get the last inserted ID in MySQL
                 cursor.execute("SELECT LAST_INSERT_ID()")
@@ -271,7 +290,7 @@ def add_expense_to_db(date, amount, description, category, user_id=None):
                 # SQLite uses ? placeholders instead of %s
                 cursor.execute(
                     "INSERT INTO expenses (date, amount, description, category, user_id) VALUES (?, ?, ?, ?, ?)",
-                    (date, amount, description, category, user_id)
+                    (date_str, amount, description, category, user_id)
                 )
                 # Get the last inserted ID in SQLite
                 last_id = cursor.lastrowid
@@ -289,7 +308,7 @@ def add_expense_to_db(date, amount, description, category, user_id=None):
                 if USE_MYSQL and MYSQL_AVAILABLE:
                     cursor.execute(
                         "INSERT INTO expenses (date, amount, description, category, user_id) VALUES (%s, %s, %s, %s, %s)",
-                        (date, amount, description, category, user_id)
+                        (date_str, amount, description, category, user_id)
                     )
                     # Get the last inserted ID in MySQL
                     cursor.execute("SELECT LAST_INSERT_ID()")
@@ -297,7 +316,7 @@ def add_expense_to_db(date, amount, description, category, user_id=None):
                 else:
                     cursor.execute(
                         "INSERT INTO expenses (date, amount, description, category, user_id) VALUES (?, ?, ?, ?, ?)",
-                        (date, amount, description, category, user_id)
+                        (date_str, amount, description, category, user_id)
                     )
                     # Get the last inserted ID in SQLite
                     last_id = cursor.lastrowid
@@ -386,6 +405,25 @@ def fetch_expenses_from_db(user_id=None):
         conn.close()
 
 def update_expense_in_db(id, date, amount, description, category, user_id=None):
+    # Ensure date is in the correct format
+    try:
+        # If date is already a string in YYYY-MM-DD format, this will work
+        parsed_date = datetime.strptime(date, '%Y-%m-%d')
+        date_str = date
+    except (ValueError, TypeError):
+        # If date is in another format or is a datetime object
+        try:
+            if isinstance(date, datetime):
+                date_str = date.strftime('%Y-%m-%d')
+            else:
+                # Try to parse with dateutil
+                parsed_date = parser.parse(str(date))
+                date_str = parsed_date.strftime('%Y-%m-%d')
+        except:
+            # If all else fails, use today's date
+            date_str = datetime.utcnow().strftime('%Y-%m-%d')
+    
+    print(f"Normalized date for update: {date_str}")
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -393,13 +431,13 @@ def update_expense_in_db(id, date, amount, description, category, user_id=None):
             if USE_MYSQL and MYSQL_AVAILABLE:
                 cursor.execute(
                     "UPDATE expenses SET date = %s, amount = %s, description = %s, category = %s, user_id = %s WHERE id = %s",
-                    (date, amount, description, category, user_id, id)
+                    (date_str, amount, description, category, user_id, id)
                 )
             else:
                 # SQLite uses ? placeholders
                 cursor.execute(
                     "UPDATE expenses SET date = ?, amount = ?, description = ?, category = ?, user_id = ? WHERE id = ?",
-                    (date, amount, description, category, user_id, id)
+                    (date_str, amount, description, category, user_id, id)
                 )
         except Exception as err:
             # Check if this is an 'Unknown column' error for user_id
@@ -415,12 +453,12 @@ def update_expense_in_db(id, date, amount, description, category, user_id=None):
                 if USE_MYSQL and MYSQL_AVAILABLE:
                     cursor.execute(
                         "UPDATE expenses SET date = %s, amount = %s, description = %s, category = %s, user_id = %s WHERE id = %s",
-                        (date, amount, description, category, user_id, id)
+                        (date_str, amount, description, category, user_id, id)
                     )
                 else:
                     cursor.execute(
                         "UPDATE expenses SET date = ?, amount = ?, description = ?, category = ?, user_id = ? WHERE id = ?",
-                        (date, amount, description, category, user_id, id)
+                        (date_str, amount, description, category, user_id, id)
                     )
             else:
                 raise
@@ -589,8 +627,9 @@ def dashboard():
     total = sum(expense['amount'] for expense in expenses)
     
     # Get today's date for filtering today's expenses
-    today = datetime.now()
-    print(f"Today's date: {today}")
+    # Use UTC time to avoid timezone issues in deployed environments
+    today = datetime.utcnow()
+    print(f"Today's UTC date: {today}")
     
     # Debug: Print all expense dates to check format
     for expense in expenses:
@@ -602,16 +641,22 @@ def dashboard():
     # Filter expenses for today only
     todays_expenses = []
     for expense in expenses:
+        # Extract just the date part (YYYY-MM-DD) for comparison
         expense_date_str = ''
+        
+        # Handle datetime objects
         if isinstance(expense['date'], datetime):
+            # Convert to UTC to match today's UTC time
             expense_date_str = expense['date'].strftime('%Y-%m-%d')
+        # Handle string dates
         elif isinstance(expense['date'], str):
             # Try to parse the string to ensure it's in the correct format
             try:
+                # First try the standard format
                 parsed_date = datetime.strptime(expense['date'], '%Y-%m-%d')
                 expense_date_str = expense['date']
             except ValueError:
-                # If parsing fails, try to handle other formats
+                # If that fails, try more flexible parsing
                 try:
                     parsed_date = parser.parse(expense['date'])
                     expense_date_str = parsed_date.strftime('%Y-%m-%d')
@@ -619,9 +664,13 @@ def dashboard():
                     # If all parsing fails, use the string as is
                     expense_date_str = expense['date']
         
-        # Compare the date strings
+        # Debug output to help diagnose issues
+        print(f"Comparing expense date: {expense_date_str} with today: {today_str}")
+        
+        # Compare the date strings - only exact matches count as today
         if expense_date_str == today_str:
             todays_expenses.append(expense)
+            print(f"MATCH: Adding expense {expense['description']} to today's expenses")
     
     # Debug: Print today's expenses
     print(f"Found {len(todays_expenses)} expenses for today")
@@ -682,7 +731,8 @@ def add_expense():
             flash('Error adding expense', 'danger')
     
     # Pass today's date to the template in the correct format
-    today_date = datetime.now().strftime('%Y-%m-%d')
+    # Use UTC time to avoid timezone issues in deployed environments
+    today_date = datetime.utcnow().strftime('%Y-%m-%d')
     return render_template('add_expense.html', today_date=today_date)
 
 @app.route('/edit/<int:id>', methods=['GET', 'POST'])
