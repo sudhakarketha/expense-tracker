@@ -588,11 +588,23 @@ def dashboard():
     
     # Get today's date for filtering today's expenses
     today = datetime.now()
+    print(f"Today's date: {today}")
+    
+    # Debug: Print all expense dates to check format
+    for expense in expenses:
+        print(f"Expense date: {expense['date']}, Type: {type(expense['date'])}")
+    
     # Compare only year, month, and day components to avoid timezone issues
     todays_expenses = [expense for expense in expenses if isinstance(expense['date'], datetime) and 
                       expense['date'].year == today.year and 
                       expense['date'].month == today.month and 
                       expense['date'].day == today.day]
+    
+    # Debug: Print today's expenses
+    print(f"Found {len(todays_expenses)} expenses for today")
+    for expense in todays_expenses:
+        print(f"Today's expense: {expense['description']}, Date: {expense['date']}")
+    
     
     # Group expenses by category for chart
     categories = {}
