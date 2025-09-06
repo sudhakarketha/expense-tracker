@@ -595,10 +595,19 @@ def dashboard():
         print(f"Expense date: {expense['date']}, Type: {type(expense['date'])}")
     
     # Compare only year, month, and day components to avoid timezone issues
-    todays_expenses = [expense for expense in expenses if isinstance(expense['date'], datetime) and 
-                      expense['date'].year == today.year and 
-                      expense['date'].month == today.month and 
-                      expense['date'].day == today.day]
+    # Convert today to string format for more reliable comparison
+    today_str = today.strftime('%Y-%m-%d')
+    
+    todays_expenses = []
+    for expense in expenses:
+        if isinstance(expense['date'], datetime):
+            expense_date_str = expense['date'].strftime('%Y-%m-%d')
+            if expense_date_str == today_str:
+                todays_expenses.append(expense)
+        elif isinstance(expense['date'], str):
+            # Handle case where date might already be a string
+            if expense['date'] == today_str:
+                todays_expenses.append(expense)
     
     # Debug: Print today's expenses
     print(f"Found {len(todays_expenses)} expenses for today")
@@ -658,7 +667,9 @@ def add_expense():
         else:
             flash('Error adding expense', 'danger')
     
-    return render_template('add_expense.html')
+    # Pass today's date to the template in the correct format
+    today_date = datetime.now().strftime('%Y-%m-%d')
+    return render_template('add_expense.html', today_date=today_date)
 
 @app.route('/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
