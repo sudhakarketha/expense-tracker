@@ -8,6 +8,8 @@ from decimal import Decimal
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, g, session
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
+# Import dateutil parser for flexible date parsing
+from dateutil import parser
 
 # Custom JSON encoder to handle Decimal objects
 class CustomJSONEncoder(json.JSONEncoder):
@@ -594,20 +596,32 @@ def dashboard():
     for expense in expenses:
         print(f"Expense date: {expense['date']}, Type: {type(expense['date'])}")
     
-    # Compare only year, month, and day components to avoid timezone issues
     # Convert today to string format for more reliable comparison
     today_str = today.strftime('%Y-%m-%d')
     
+    # Filter expenses for today only
     todays_expenses = []
     for expense in expenses:
+        expense_date_str = ''
         if isinstance(expense['date'], datetime):
             expense_date_str = expense['date'].strftime('%Y-%m-%d')
-            if expense_date_str == today_str:
-                todays_expenses.append(expense)
         elif isinstance(expense['date'], str):
-            # Handle case where date might already be a string
-            if expense['date'] == today_str:
-                todays_expenses.append(expense)
+            # Try to parse the string to ensure it's in the correct format
+            try:
+                parsed_date = datetime.strptime(expense['date'], '%Y-%m-%d')
+                expense_date_str = expense['date']
+            except ValueError:
+                # If parsing fails, try to handle other formats
+                try:
+                    parsed_date = parser.parse(expense['date'])
+                    expense_date_str = parsed_date.strftime('%Y-%m-%d')
+                except:
+                    # If all parsing fails, use the string as is
+                    expense_date_str = expense['date']
+        
+        # Compare the date strings
+        if expense_date_str == today_str:
+            todays_expenses.append(expense)
     
     # Debug: Print today's expenses
     print(f"Found {len(todays_expenses)} expenses for today")
